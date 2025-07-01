@@ -3,47 +3,103 @@ const fs = require("fs");
 const path = require("path");
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+app.use(express.json()); // To parse JSON bodies
 
-// Create logs directory if not exists
+const PORT = process.env.PORT ||5000;
+
+// === Directories ===
 const logDir = path.join(__dirname, "logs");
-if (!fs.existsSync(logDir)) fs.mkdirSync(logDir);
+const usersFile = path.join(__dirname, "users.json");
 
-// Log each request
+if (!fs.existsSync(logDir)) fs.mkdirSync(logDir);
+if (!fs.existsSync(usersFile)) fs.writeFileSync(usersFile, "[]");
+
+// === Junk for Load ===
+let requestCount = 0;
+const bigJunk = "🧱".repeat(1000);
+
+// === Logging Middleware ===
 app.use((req, res, next) => {
+  requestCount++;
+  if (requestCount % 100 === 0) {
+    console.log(`🔥 ${requestCount} requests so far`);
+  }
+
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   const ua = req.headers["user-agent"];
   const now = new Date().toISOString();
+  const openLine = `[OPEN] ${now} | ${ip} | ${ua}\n${bigJunk}\n${bigJunk}\n\n`;
 
-  fs.appendFileSync(path.join(logDir, "open.log"), `[OPEN] ${now} | ${ip} | ${ua}\n`);
+  fs.appendFileSync(path.join(logDir, "open.log"), openLine);
 
   res.on("close", () => {
-    fs.appendFileSync(path.join(logDir, "close.log"), `[CLOSE] ${new Date().toISOString()} | ${ip} | ${ua}\n`);
+    const closeLine = `[CLOSE] ${new Date().toISOString()} | ${ip} | ${ua}\n${bigJunk}\n${bigJunk}\n\n`;
+    fs.appendFileSync(path.join(logDir, "close.log"), closeLine);
   });
 
   next();
 });
 
-// Main route
+// === Routes ===
 app.get("/", (req, res) => {
-  res.send("👋 Hello from the public logging server");
+  res.send("👋 Server is running with fake login/signup and stress logging!");
 });
 
-// View open log
-app.get("/view/open", (req, res) => {
-  const file = path.join(logDir, "open.log");
-  if (!fs.existsSync(file)) return res.send("open.log does not exist yet.");
-  res.type("text/plain").send(fs.readFileSync(file, "utf-8"));
+// === Signup ===
+app.post("/signup", (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).send("Missing fields");
+
+  const users = JSON.parse(fs.readFileSync(usersFile));
+  users.push({ username, password, createdAt: new Date().toISOString() });
+  fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
+
+  const log = `[SIGNUP] ${username} | ${password} | ${new Date().toISOString()}\n`;
+  fs.appendFileSync(path.join(logDir, "signup.log"), log);
+
+  console.log(`[SIGNUP] ${username} | ${password}`);  // 👈 this shows in terminal
+
+  res.send("✅ Signup successful (fake)");
 });
 
-// View close log
-app.get("/view/close", (req, res) => {
-  const file = path.join(logDir, "close.log");
-  if (!fs.existsSync(file)) return res.send("close.log does not exist yet.");
-  res.type("text/plain").send(fs.readFileSync(file, "utf-8"));
+
+// === Login ===
+app.post("/login", (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).send("Missing fields");
+
+  const users = JSON.parse(fs.readFileSync(usersFile));
+  const exists = users.find(u => u.username === username && u.password === password);
+
+  const now = new Date().toISOString();
+  const log = `[LOGIN] ${username} | ${password} | ${now} | ${exists ? "✅ SUCCESS" : "❌ FAIL"}\n`;
+  fs.appendFileSync(path.join(logDir, "login.log"), log);
+
+  console.log(`[LOGIN] ${username} | ${password} | ${exists ? "✅" : "❌"}`);  // 👈 this too
+
+  if (!exists) return res.status(401).send("❌ Invalid credentials (fake)");
+  res.send("✅ Login successful (fake)");
 });
 
-// Start server
+
+// === View Users ===
+app.get("/users", (req, res) => {
+  const users = JSON.parse(fs.readFileSync(usersFile));
+  res.json(users);
+});
+
+// === Log Viewers ===
+app.get("/view/:type", (req, res) => {
+  const file = path.join(logDir, `${req.params.type}.log`);
+  if (!fs.existsSync(file)) return res.send(`${req.params.type}.log not found.`);
+  res.type("text/plain").send(fs.readFileSync(file, "utf8"));
+});
+
+// === Stats ===
+app.get("/stats", (req, res) => {
+  res.send(`📈 Total requests: ${requestCount}`);
+});
+
 app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
