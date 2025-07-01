@@ -3,52 +3,62 @@ const fs = require("fs");
 const path = require("path");
 
 const app = express();
-app.use(express.json()); // To parse JSON bodies
+app.use(express.json());
 
-const PORT = process.env.PORT ||5000;
-
-// === Directories ===
+const PORT = process.env.PORT || 5000;
 const logDir = path.join(__dirname, "logs");
 const usersFile = path.join(__dirname, "users.json");
 
 if (!fs.existsSync(logDir)) fs.mkdirSync(logDir);
 if (!fs.existsSync(usersFile)) fs.writeFileSync(usersFile, "[]");
 
-// === Junk for Load ===
 let requestCount = 0;
 const bigJunk = "🧱".repeat(1000);
 
-// === Logging Middleware ===
+// 🔥 Log Helper
+function logConsole(type, message) {
+  console.log(`[${new Date().toISOString()}] 🔹 ${type}: ${message}`);
+}
+
+// 🌐 Global Middleware: Log every request
 app.use((req, res, next) => {
   requestCount++;
-  if (requestCount % 100 === 0) {
-    console.log(`🔥 ${requestCount} requests so far`);
+
+  // Route-based logging
+  logConsole("ROUTE HIT", `${req.method} ${req.originalUrl}`);
+
+  if (requestCount % 10 === 0) {
+    logConsole("REQ COUNT", `🔥 Total ${requestCount} requests`);
   }
 
+  // Log to file (open)
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   const ua = req.headers["user-agent"];
   const now = new Date().toISOString();
-  const openLine = `[OPEN] ${now} | ${ip} | ${ua}\n${bigJunk}\n${bigJunk}\n\n`;
+  const openLog = `[OPEN] ${now} | ${ip} | ${ua}\n${bigJunk}\n${bigJunk}\n\n`;
 
-  fs.appendFileSync(path.join(logDir, "open.log"), openLine);
+  fs.appendFileSync(path.join(logDir, "open.log"), openLog);
 
   res.on("close", () => {
-    const closeLine = `[CLOSE] ${new Date().toISOString()} | ${ip} | ${ua}\n${bigJunk}\n${bigJunk}\n\n`;
-    fs.appendFileSync(path.join(logDir, "close.log"), closeLine);
+    const closeLog = `[CLOSE] ${new Date().toISOString()} | ${ip} | ${ua}\n${bigJunk}\n${bigJunk}\n\n`;
+    fs.appendFileSync(path.join(logDir, "close.log"), closeLog);
   });
 
   next();
 });
 
-// === Routes ===
+// 🚀 Home Route
 app.get("/", (req, res) => {
-  res.send("👋 Server is running with fake login/signup and stress logging!");
+  res.send("👋 Hello! Server is alive with enhanced logging.");
 });
 
-// === Signup ===
+// 🔐 Signup
 app.post("/signup", (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) return res.status(400).send("Missing fields");
+  if (!username || !password) {
+    logConsole("SIGNUP ❌", `Missing username/password from ${req.ip}`);
+    return res.status(400).send("Missing username or password");
+  }
 
   const users = JSON.parse(fs.readFileSync(usersFile));
   users.push({ username, password, createdAt: new Date().toISOString() });
@@ -57,49 +67,54 @@ app.post("/signup", (req, res) => {
   const log = `[SIGNUP] ${username} | ${password} | ${new Date().toISOString()}\n`;
   fs.appendFileSync(path.join(logDir, "signup.log"), log);
 
-  console.log(`[SIGNUP] ${username} | ${password}`);  // 👈 this shows in terminal
+  logConsole("SIGNUP ✅", `New account: ${username} | ${password}`);
 
-  res.send("✅ Signup successful (fake)");
+  res.send("✅ Fake signup success");
 });
 
-
-// === Login ===
+// 🔑 Login
 app.post("/login", (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) return res.status(400).send("Missing fields");
+  if (!username || !password) {
+    logConsole("LOGIN ❌", "Missing login fields");
+    return res.status(400).send("Missing fields");
+  }
 
   const users = JSON.parse(fs.readFileSync(usersFile));
-  const exists = users.find(u => u.username === username && u.password === password);
+  const user = users.find(u => u.username === username && u.password === password);
 
+  const status = user ? "✅ SUCCESS" : "❌ FAIL";
   const now = new Date().toISOString();
-  const log = `[LOGIN] ${username} | ${password} | ${now} | ${exists ? "✅ SUCCESS" : "❌ FAIL"}\n`;
+  const log = `[LOGIN] ${username} | ${password} | ${now} | ${status}\n`;
   fs.appendFileSync(path.join(logDir, "login.log"), log);
 
-  console.log(`[LOGIN] ${username} | ${password} | ${exists ? "✅" : "❌"}`);  // 👈 this too
+  logConsole("LOGIN", `${username} | ${password} → ${status}`);
 
-  if (!exists) return res.status(401).send("❌ Invalid credentials (fake)");
-  res.send("✅ Login successful (fake)");
+  if (!user) return res.status(401).send("❌ Invalid credentials");
+
+  res.send("✅ Fake login success");
 });
 
-
-// === View Users ===
+// 👥 Get all users
 app.get("/users", (req, res) => {
   const users = JSON.parse(fs.readFileSync(usersFile));
+  logConsole("USERS", `Fetched ${users.length} users`);
   res.json(users);
 });
 
-// === Log Viewers ===
+// 📄 View Logs
 app.get("/view/:type", (req, res) => {
   const file = path.join(logDir, `${req.params.type}.log`);
   if (!fs.existsSync(file)) return res.send(`${req.params.type}.log not found.`);
   res.type("text/plain").send(fs.readFileSync(file, "utf8"));
 });
 
-// === Stats ===
+// 📈 Stats
 app.get("/stats", (req, res) => {
+  logConsole("STATS", `Request count returned: ${requestCount}`);
   res.send(`📈 Total requests: ${requestCount}`);
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  logConsole("SERVER", `🚀 Running on http://localhost:${PORT}`);
 });
