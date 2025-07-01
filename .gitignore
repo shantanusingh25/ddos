@@ -1,2 +1,10 @@
 ./node_modules
 .env
+/logs
+
+/log/open.log
+/log/close.log
+/log/signup.log
+/log/login.log
+/log/stats.log
+
